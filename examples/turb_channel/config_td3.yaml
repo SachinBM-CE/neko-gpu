@@ -1,0 +1,67 @@
+general:
+  report_frequency: 1
+  enable_wandb_hook: 0
+  verbose: 1
+
+algorithm:
+  type: td3
+  parameters:
+    batch_size: 64
+    num_critics: 1
+    policy_lag: 1
+    nstep: 5
+    nstep_reward_reduction: sum
+    gamma: 0.95
+    rho: 0.999
+
+actor:
+  type: space_noise
+  parameters:
+    a_low: 0.95
+    a_high: 1.05
+    clip: 0.3
+    sigma_train: 0.2
+    sigma_explore: 1.0
+
+replay_buffer:
+  type: uniform
+  parameters:
+    max_size: 1280000
+    min_size: 12800
+    n_envs: 12800
+
+policy_model:
+  type: SACMLP
+  parameters:
+    dropout: 0.0
+    layer_sizes: [2, 64, 64, 1]
+
+critic_model:
+  type: CriticMLP
+  parameters:
+    dropout: 0.0
+    layer_sizes: [3, 64, 64, 1]
+
+optimizer:
+  type: adam
+  parameters:
+    learning_rate: 1e-4
+    beta1: 0.9
+    beta2: 0.999
+    weight_decay: 0
+    eps: 1e-6
+    amsgrad: 0
+
+policy_lr_scheduler:
+  type: linear
+  parameters:
+    total_iters: 10000
+    start_factor: 1.0
+    end_factor: 0.01
+
+critic_lr_scheduler:
+  type: linear
+  parameters:
+    total_iters: 20000
+    start_factor: 1.0
+    end_factor: 0.01

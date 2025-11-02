@@ -1,0 +1,86 @@
+general:
+  report_frequency: 1
+  enable_wandb_hook: 1
+  verbose: 1
+
+algorithm:
+  type: sac
+  parameters:
+    batch_size: 128 
+    nstep: 5
+    nstep_reward_reduction: sum
+    num_critics: 1
+    gamma: 0.995
+    rho: 0.99
+    alpha: 0.2
+
+actor:
+  # space_noise # gaussian
+  type: parameter_noise 
+  parameters:
+    a_low: 0.9
+    a_high: 1.1
+
+replay_buffer:
+  type: uniform
+  parameters:
+    # mult env -
+    max_size: 1280000
+    min_size: 12800 
+    n_envs: 12800 # 3200
+  
+policy_model:
+  type: SACMLP
+  parameters:
+    dropout: 0.0
+    layer_sizes: [2, 64, 64, 1]
+    state_dependent_sigma: False
+    log_sigma_init: 0.
+
+critic_model:
+  type: CriticMLP
+  parameters:
+    dropout: 0.0
+    layer_sizes: [3, 64, 64, 1]
+
+# policy_model:
+  # type: torchscript
+  # parameters:
+    # filename: policy.pt
+
+# critic_model:
+#   type: torchscript
+#   parameters:
+#     filename: critic.pt
+    
+alpha_optimizer:
+  type: adam
+  parameters:
+    learning_rate: 1e-4
+    beta1: 0.9
+    beta2: 0.999
+    weight_decay: 0
+    eps: 1e-6
+    amsgrad: 0
+
+optimizer:
+  type: adam
+  parameters:
+    learning_rate: 0.0001 # Old: 1e-3
+    beta1: 0.9
+    beta2: 0.999
+    weight_decay: 1e-3
+    eps: 1e-6
+    amsgrad: 0
+
+policy_lr_scheduler:
+  type: cosine_annealing
+  parameters:
+    eta_min: 1e-3
+    T_max: 5000
+
+critic_lr_scheduler:
+  type: cosine_annealing
+  parameters:
+    eta_min: 1e-3
+    T_max: 5000

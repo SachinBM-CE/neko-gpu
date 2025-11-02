@@ -90,3 +90,14 @@ libneko*.so
 
 pixi.lock
 install
+
+# Avoiding large files
+*.nmsh
+*.f0*
+*.nek5000
+*.chkp
+*.csv
+*.png
+*.pt
+examples/0_Results
+install_gpu

@@ -372,6 +372,9 @@ neko_fortran_SOURCES = \
 	wall_models/spalding.f90\
 	wall_models/bcknd/cpu/spalding_cpu.f90\
 	wall_models/bcknd/device/spalding_device.F90\
+    wall_models/rlwm.f90\
+    wall_models/bcknd/cpu/rlwm_cpu.f90\
+    wall_models/bcknd/device/rlwm_device.F90\
 	wall_models/wall_model_fctry.f90\
 	neko.f90
 
@@ -496,7 +499,8 @@ libneko_la_SOURCES += \
 	comm/bcknd/device/cuda/comm_nvshmem.cu\
 	wall_models/bcknd/device/cuda/wall_model.cu\
 	wall_models/bcknd/device/cuda/spalding.cu\
-	wall_models/bcknd/device/cuda/rough_log_law.cu
+	wall_models/bcknd/device/cuda/rough_log_law.cu\
+	wall_models/bcknd/device/cuda/rlwm.cu
 
 
 BUILT_SOURCES = libtool_cuda
@@ -670,6 +674,7 @@ EXTRA_DIST = \
 	wall_models/bcknd/device/cuda/wall_model_kernel.h\
 	wall_models/bcknd/device/cuda/spalding_kernel.h\
 	wall_models/bcknd/device/cuda/rough_log_law_kernel.h\
+	wall_models/bcknd/device/cuda/rlwm_kernel.h\
 	bc/bcknd/device/hip/dirichlet_kernel.h\
 	bc/bcknd/device/hip/inflow_kernel.h\
 	bc/bcknd/device/hip/zero_dirichlet_kernel.h\

@@ -34,14 +34,16 @@ submodule (wall_model) wall_model_fctry
   use vreman, only : vreman_t
   use spalding, only : spalding_t
   use rough_log_law, only : rough_log_law_t
+  use rlwm, only : rlwm_t ! SBM
   use utils, only : neko_type_error
   use utils, only : neko_type_registration_error
   implicit none
 
   ! List of all possible types created by the factory routine
-  character(len=20) :: WALLM_KNOWN_TYPES(2) = [character(len=20) :: &
+  character(len=20) :: WALLM_KNOWN_TYPES(3) = [character(len=20) :: &
        "spalding", &
-       "rough_log_law"]
+       "rough_log_law", & 
+       "rlwm"] ! SBM
 
 contains
 
@@ -88,6 +90,8 @@ contains
        allocate(spalding_t::object)
     case ("rough_log_law")
        allocate(rough_log_law_t::object)
+    case ("rlwm") ! SBM
+       allocate(rlwm_t::object) ! SBM
     case default
        do i = 1, wall_model_registry_size
           if (trim(type_name) .eq. trim(wall_model_registry(i)%type_name)) then
