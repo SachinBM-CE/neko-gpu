@@ -200,10 +200,38 @@ module rlwm_device
 
     end subroutine cuda_rlwm_under_relax
   end interface
+
+  interface
+    subroutine cuda_rlwm_inference(n_nodes, tstep, start_rl_tstep, tsteps_rl, episode_length, &
+      action_d, tau_old_l_d, tau_new_l_d, utau_l_d, &
+      tau_x_d, tau_y_d, tau_z_d, tau_true, &
+      ui_l_d, vi_l_d, wi_l_d, magu_l_d, &
+      error_new_d, error_old_d, rel_error_d, &
+      reward_d, total_reward_d, base_reward_d, bonus_reward_d, &
+      msk_d, reward_field_d) &
+      bind(c, name = 'cuda_rlwm_inference')
+
+      use, intrinsic :: iso_c_binding, only : c_ptr, c_int
+      use num_types, only : c_rp
+      implicit none
+
+      integer(c_int) :: n_nodes, tstep, start_rl_tstep, tsteps_rl, episode_length
+      real(c_rp) :: tau_true
+      type(c_ptr), value :: action_d
+      type(c_ptr), value :: tau_old_l_d, tau_new_l_d, utau_l_d
+      type(c_ptr), value :: tau_x_d, tau_y_d, tau_z_d
+      type(c_ptr), value :: ui_l_d, vi_l_d, wi_l_d, magu_l_d
+      type(c_ptr), value :: error_new_d, error_old_d, rel_error_d
+      type(c_ptr), value :: reward_d, total_reward_d
+      type(c_ptr), value :: base_reward_d, bonus_reward_d
+      type(c_ptr), value :: msk_d, reward_field_d
+
+    end subroutine cuda_rlwm_inference
+  end interface
   
 #elif HAVE_OPENCL
 #endif
-  public :: spalding_initialize_device, rlwm_compute_device, rlwm_actuate_device, rlwm_under_relax_device
+  public :: spalding_initialize_device, rlwm_compute_device, rlwm_actuate_device, rlwm_under_relax_device, rlwm_inference_device
 
 contains
   !> Compute the wall shear stress on device using RLWM.
@@ -405,5 +433,45 @@ contains
 
   end subroutine rlwm_under_relax_device
 
+  !> Inferencing using RLWM.
+  !! @param n_nodes Number of wall nodes.
+  !! @param tstep Current time step.
+  !! @param tsteps_rl Number of time steps between RL actions.
+  subroutine rlwm_inference_device(n_nodes, tstep, start_rl_tstep, tsteps_rl, episode_length, &
+    action_d, tau_old_l_d, tau_new_l_d, utau_l_d, &
+    tau_x_d, tau_y_d, tau_z_d, tau_true, &
+    ui_l_d, vi_l_d, wi_l_d, magu_l_d, &
+    error_new_d, error_old_d, rel_error_d, &
+    reward_d, total_reward_d, base_reward_d, bonus_reward_d, &
+    msk_d, reward_field_d)
+
+    integer, intent(in) :: n_nodes, tstep, start_rl_tstep, tsteps_rl, episode_length
+    real(kind=rp), intent(in) :: tau_true
+    type(c_ptr), intent(in) :: action_d
+    type(c_ptr), intent(inout) :: tau_old_l_d, tau_new_l_d, utau_l_d
+    type(c_ptr), intent(inout) :: tau_x_d, tau_y_d, tau_z_d
+    type(c_ptr), intent(inout) :: ui_l_d, vi_l_d, wi_l_d, magu_l_d
+    type(c_ptr), intent(inout) :: error_new_d, error_old_d, rel_error_d
+    type(c_ptr), intent(inout) :: reward_d, total_reward_d
+    type(c_ptr), intent(inout) :: base_reward_d, bonus_reward_d
+    type(c_ptr), intent(inout) :: msk_d, reward_field_d
+
+#if HAVE_HIP
+    call neko_error("HIP is not implemented for RLWM inference")
+#elif HAVE_CUDA
+    call cuda_rlwm_inference(n_nodes, tstep, start_rl_tstep, tsteps_rl, episode_length, &
+         action_d, tau_old_l_d, tau_new_l_d, utau_l_d, &
+         tau_x_d, tau_y_d, tau_z_d, tau_true, &
+         ui_l_d, vi_l_d, wi_l_d, magu_l_d, &
+         error_new_d, error_old_d, rel_error_d, &
+         reward_d, total_reward_d, base_reward_d, bonus_reward_d, &
+         msk_d, reward_field_d)
+#elif HAVE_OPENCL
+    call neko_error("OPENCL is not implemented for RLWM inference")
+#else
+    call neko_error('No device backend configured')
+#endif
+
+  end subroutine rlwm_inference_device
 
 end module rlwm_device

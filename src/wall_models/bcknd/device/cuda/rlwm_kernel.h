@@ -248,12 +248,25 @@ __global__ void rlwm_compute(const T * __restrict__ u_d, const T * __restrict__ 
         normu_l_d[i] = normu;
         magu_l_d[i] = magu;
         
-        // First set the terminal flag for the current timestep 
-        if (((tstep - start_rl_tstep) / tsteps_rl) % episode_length == 0) {
-          terminal_d[i] = 1.0;
+        if ((tstep - start_rl_tstep) % tsteps_rl == 0) {
+            // Only then calculate episode_step and set terminal flag
+            int rl_step = (tstep - start_rl_tstep) / tsteps_rl;
+            int episode_step = rl_step % episode_length;
+            if (episode_step == 0 && rl_step > 0) {
+                terminal_d[i] = 1.0;
+            } else {
+                terminal_d[i] = 0.0;
+            }
         } else {
-          terminal_d[i] = 0.0;
+            // For non-RL timesteps, preserve previous terminal value or set to 0
+            terminal_d[i] = 0.0;
         }
+        // First set the terminal flag for the current timestep 
+        // if (((tstep - start_rl_tstep) / tsteps_rl) % episode_length == 0) {
+        //   terminal_d[i] = 1.0;
+        // } else {
+        //   terminal_d[i] = 0.0;
+        // }
 
         // Magnitude of Shear Stress
         tau_old_l_d[i] = sqrt(tau_x_d[i] * tau_x_d[i] + tau_y_d[i] * tau_y_d[i] + tau_z_d[i] * tau_z_d[i]);
@@ -401,6 +414,55 @@ __global__ void rlwm_under_relax(const int n_nodes, const int tstep,
 }
 
 /**
+ * Kernel for applying the actions to the wall shear stress
+ */
+template<typename T>
+__global__ void rlwm_inference(const int n_nodes, const int tstep, 
+                               const int start_rl_tstep, const int tsteps_rl, const int episode_length,
+                               const T * __restrict__ action_d,
+                               T * __restrict__ tau_old_l_d, T * __restrict__ tau_new_l_d,
+                               T * __restrict__ utau_l_d,
+                               T * __restrict__ tau_x_d, T * __restrict__ tau_y_d, T * __restrict__ tau_z_d,
+                               const T tau_true,
+                               T * __restrict__ ui_l_d, T * __restrict__ vi_l_d, T * __restrict__ wi_l_d,
+                               T * __restrict__ magu_l_d,
+                               T * __restrict__ error_new_d, T * __restrict__ error_old_d,
+                               T * __restrict__ rel_error_d, T * __restrict__ reward_d,
+                               T * __restrict__ total_reward_d, 
+                               T * __restrict__ base_reward_d, T * __restrict__ bonus_reward_d,
+                               const int * __restrict__ msk_d, T * __restrict__ reward_field_d) {
+
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const int str = blockDim.x * gridDim.x;
+
+    for (int i = idx; i < n_nodes; i += str) {
+
+        if (((tstep - start_rl_tstep) % tsteps_rl) == 0) {
+            tau_new_l_d[i] = tau_old_l_d[i] * action_d[i];
+            if (i==1){
+                printf("INFERENCE-NEW-ACTION: %d, tau_new[%d]=%.5f, tau_old[%d]=%.5f, action_d[%d]=%.5f\n", 
+                    tstep, i, tau_new_l_d[i], i, tau_old_l_d[i], i, action_d[i]);
+            }
+        } else {
+            T alpha = T((tstep - start_rl_tstep) % tsteps_rl) / T(tsteps_rl);
+            tau_new_l_d[i] = tau_old_l_d[i] * (T(1.0) - alpha) + tau_new_l_d[i] * alpha;
+            if (i==1){
+                printf("INFERENCE-UNDER-RELAX: %d, tau_new[%d]=%.5f, tau_old[%d]=%.5f, alpha=%.5f\n", 
+                    tstep, i, tau_new_l_d[i], i, tau_old_l_d[i], alpha);
+            }
+        }
+
+        // Friction velocity based on new wall shear stress
+        utau_l_d[i] = sqrt(tau_new_l_d[i]);
+
+        // Distribute according to the velocity vector
+        tau_x_d[i] = -utau_l_d[i] * utau_l_d[i] * ui_l_d[i] / magu_l_d[i];
+        tau_y_d[i] = -utau_l_d[i] * utau_l_d[i] * vi_l_d[i] / magu_l_d[i];
+        tau_z_d[i] = -utau_l_d[i] * utau_l_d[i] * wi_l_d[i] / magu_l_d[i];
+    }
+}
+
+/**
  * Newton solver for the algebraic equation defined by the law on GPU.
  */
 template<typename T>
@@ -468,7 +530,7 @@ __device__ void calculate_reward(const int i, const T tau_new, const T tau_true,
     // Reward clipping
     reward_d[i] = tanh(reward_d[i]);
     
-    // Reward collected by agent 'i' in one episode consisting of 'tsteps_rl' trajectories
+    // Reward collected by agent 'i' in one episode consisting of trajectories at 'tsteps_rl' 
     total_reward_d[i] = total_reward_d[i] + reward_d[i];
     
     // Method 2: Simple relative error

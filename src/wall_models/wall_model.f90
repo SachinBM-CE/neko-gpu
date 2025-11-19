@@ -518,11 +518,12 @@ contains
        end if
     end do
 
-!    hmin = glmin(this%h%x, n_nodes)
-!    hmax = glmax(this%h%x, n_nodes)
-!    if (pe_rank .eq. 0) then
-!       write(*, "(A, F10.4, F10.4)") "   h min / max:", hmin, hmax
-!    end if
+   hmin = glmin(this%h%x, n_nodes)
+   hmax = glmax(this%h%x, n_nodes)
+   if (pe_rank .eq. 0) then
+      write(*, "(A, F10.4, F10.4)") "   h min / max:", hmin, hmax
+      write(*, *) "Number of wall model sampling points:", n_nodes
+   end if
 
     if (NEKO_BCKND_DEVICE .eq. 1) then
        call device_memcpy(this%h%x, this%h%x_d, n_nodes, HOST_TO_DEVICE,&

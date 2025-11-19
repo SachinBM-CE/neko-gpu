@@ -180,4 +180,33 @@ extern "C" {
     CUDA_CHECK(cudaGetLastError());
   }
 
+  void cuda_rlwm_inference(int *n_nodes, int *tstep, int *start_rl_tstep, int *tsteps_rl, int *episode_length,
+          void *action_d,
+          void *tau_old_l_d, void *tau_new_l_d, void *utau_l_d,
+          void *tau_x_d, void *tau_y_d, void *tau_z_d,
+          real *tau_true,
+          void *ui_l_d, void *vi_l_d, void *wi_l_d, void *magu_l_d,
+          void *error_new_d, void *error_old_d, void *rel_error_d,
+          void *reward_d, void *total_reward_d,
+          void *base_reward_d, void *bonus_reward_d,
+          void *msk_d, void *reward_field_d) {
+
+    const dim3 nthrds(512, 1, 1);
+    const dim3 nblcks(((*n_nodes)+512 - 1)/ 512, 1, 1);
+    const cudaStream_t stream = (cudaStream_t) glb_cmd_queue;
+
+    rlwm_inference<real>
+    <<<nblcks, nthrds, 0, stream>>>(*n_nodes, *tstep, *start_rl_tstep, *tsteps_rl, *episode_length,
+                                    (real *) action_d,
+                                    (real *) tau_old_l_d, (real *) tau_new_l_d, (real *) utau_l_d,
+                                    (real *) tau_x_d, (real *) tau_y_d, (real *) tau_z_d,
+                                    *tau_true,
+                                    (real *) ui_l_d, (real *) vi_l_d, (real *) wi_l_d, (real *) magu_l_d,
+                                    (real *) error_new_d, (real *) error_old_d, (real *) rel_error_d,
+                                    (real *) reward_d, (real *) total_reward_d,
+                                    (real *) base_reward_d, (real *) bonus_reward_d, 
+                                    (int *) msk_d, (real *) reward_field_d);
+    CUDA_CHECK(cudaGetLastError());
+  }
+
 }

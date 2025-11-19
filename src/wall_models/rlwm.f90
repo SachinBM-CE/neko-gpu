@@ -42,7 +42,7 @@ module rlwm
   use field_registry, only : neko_field_registry
   use json_utils, only : json_get_or_default
   use rlwm_cpu, only : rlwm_compute_cpu
-  use rlwm_device, only : spalding_initialize_device, rlwm_compute_device, rlwm_actuate_device
+  use rlwm_device, only : spalding_initialize_device, rlwm_compute_device, rlwm_actuate_device, rlwm_inference_device
   use field_math, only: field_invcol3
   use vector, only : vector_t
   use math, only: masked_gather_copy_0
@@ -80,6 +80,7 @@ module rlwm
     !> TorchFort =================================================================================================================
     !> JSON INPUTS 
     character(len=256) :: tf_key, yaml_path, log_dir, policy_method, phase
+    character(len=256) :: model_name, policy_model_file, model_config_file
     integer :: model_device, rb_device, start_rl_tstep, tsteps_rl, episode_length, n_epochs
     real(kind=rp) :: tau_true
     !> Vectors
@@ -131,6 +132,7 @@ module rlwm
      procedure, pass(this) :: get_global_terminal => rlwm_get_global_terminal
      procedure, pass(this) :: update_buffer => rlwm_update_buffer
      procedure, pass(this) :: train_and_save => rlwm_train_and_save
+     procedure, pass(this) :: print_buffer => rlwm_print_buffer
 
   end type rlwm_t
 
@@ -219,6 +221,15 @@ contains
 
     call json_get_or_default(json, "n_epochs", tmp_real, 10.0_rp)
     this%n_epochs = int(tmp_real)
+
+    call json_get(json, "model_name", tmp_string)
+    this%model_name = trim(tmp_string)
+
+    call json_get(json, "model_config_file", tmp_string)
+    this%model_config_file = trim(tmp_string)
+
+    call json_get(json, "policy_model_file", tmp_string)
+    this%policy_model_file = trim(tmp_string)
     
     res = torchfort_set_manual_seed(123)
     if (res /= TORCHFORT_RESULT_SUCCESS) stop
@@ -233,30 +244,44 @@ contains
         print *, "Result of on_policy_create_system : ", res
         print *
       case ("off-policy")
-        res = torchfort_rl_off_policy_create_system(this%tf_key, this%yaml_path, this%model_device, this%rb_device)
-        if (res /= TORCHFORT_RESULT_SUCCESS) stop
-        print *, "Result of off_policy_create_system : ", res
-        ! res = torchfort_rl_off_policy_create_distributed_system(this%tf_key, & 
-        ! this%yaml_path, NEKO_COMM, this%model_device, this%rb_device)
-        ! if (res /= TORCHFORT_RESULT_SUCCESS) stop
-        ! print *, "Result of create_distributed_system : ", res
-        print *
+        if (this%phase .eq. "training") then
+          res = torchfort_rl_off_policy_create_system(this%tf_key, this%yaml_path, this%model_device, this%rb_device)
+          if (res /= TORCHFORT_RESULT_SUCCESS) stop
+          print *, "Result of off_policy_create_system : ", res
+          ! res = torchfort_rl_off_policy_create_distributed_system(this%tf_key, & 
+          ! this%yaml_path, NEKO_COMM, this%model_device, this%rb_device)
+          ! if (res /= TORCHFORT_RESULT_SUCCESS) stop
+          ! print *, "Result of create_distributed_system : ", res
+          print *
+        else if (this%phase .eq. "testing") then
+          res = torchfort_rl_off_policy_create_system(this%tf_key, this%yaml_path, this%model_device, this%rb_device)
+          if (res /= TORCHFORT_RESULT_SUCCESS) stop
+          print *, "Result of off_policy_create_system : ", res
+          res = torchfort_rl_off_policy_load_checkpoint(this%tf_key, this%log_dir)
+          if (res /= TORCHFORT_RESULT_SUCCESS) stop
+          print *, "Result of off_policy_load_checkpoint : ", res
+          ! res = torchfort_create_model(this%model_name, this%model_config_file, this%model_device)
+          ! print *, "Result of create_model : ", res
+          ! print *, "Model Name     : ", this%model_name
+          ! print *, "Model Config   : ", this%model_config_file
+          ! print *, "Model Device   : ", this%model_device
+          ! if (res /= TORCHFORT_RESULT_SUCCESS) stop
+          ! res = torchfort_load_model(this%model_name, this%policy_model_file)
+          ! print *, "Result of load_model  : ", res
+          ! print *, "Policy Model Name     : ", this%model_name
+          ! print *, "Policy Model Location : ", this%policy_model_file
+          ! if (res /= TORCHFORT_RESULT_SUCCESS) stop
+        end if
       case default
         print *, "Unknown command: ", trim(this%policy_method)
         stop 1
       end select
     end if
-    
-    if (trim(this%phase) .eq. 'testing') then
-      res = torchfort_rl_off_policy_load_checkpoint(this%tf_key, this%log_dir)
-      print *, "Result of load_checkpoint : ", res
-      if (res /= TORCHFORT_RESULT_SUCCESS) stop
-    end if
-    
+
     ! print *, "===> pe_size :", pe_size	
     ! print *, "this%n_nodes : ", this%n_nodes, "from pe_rank: ", pe_rank
     ! print *, "this%msk(0) : ", this%msk(0), "from pe_rank: ", pe_rank
-    
+
     allocate(this%dudy(coef%Xh%lx, coef%Xh%ly, coef%Xh%lz, coef%msh%nelv))
 
     if (NEKO_BCKND_DEVICE .eq. 1) then
@@ -277,6 +302,7 @@ contains
 	  integer :: res, ierr, i
 	  ! ***********************
 
+    print *, "this%n_nodes : ", this%n_nodes, "from pe_rank: ", pe_rank
     call this%finalize_base(msk, facet)
     call this%nu%init(this%n_nodes)
     
@@ -548,6 +574,9 @@ contains
         this%state_d, this%action_d, &
         this%msk_d, this%reward_field%x_d, this%slope_field%x_d, this%intercept_field%x_d)
 
+        call this%get_global_state()
+        call this%get_global_reward()
+
       else        
         ! ::::::> Getting the input state ::::::
         ! start_time = MPI_WTIME()
@@ -571,52 +600,64 @@ contains
         call this%predict_global_action()
         call this%get_device_action()
 
-        ! ::::::> Apply actuation to tau_w & collect rewards corresponding to this state transition ::::::
-        ! start_time = MPI_WTIME()
-        call rlwm_actuate_device(this%n_nodes, tstep, this%start_rl_tstep, this%tsteps_rl, this%episode_length, &
-              this%action_d, this%tau_old_l%x_d, this%tau_new_l%x_d, this%utau_l%x_d, &
-              this%tau_x%x_d, this%tau_y%x_d, this%tau_z%x_d, this%tau_true, &
-              this%ui_l%x_d, this%vi_l%x_d, this%wi_l%x_d, this%magu_l%x_d, &
-              this%error_new%x_d, this%error_old%x_d, this%rel_error%x_d, &
-              this%reward%x_d, this%total_reward%x_d, this%base_reward%x_d, this%bonus_reward%x_d, &
-              this%msk_d, this%reward_field%x_d)
-        ! end_time = MPI_WTIME()
-        ! if (pe_rank == 0) write(*, *) 'Time: Actuation (Sim. CUDA Kernel) = ', (end_time - start_time) * 1000.0_rp, ' ms'
+        if (this%phase .eq. 'training') then
+          ! ::::::> Apply actuation to tau_w & collect rewards corresponding to this state transition ::::::
+          ! start_time = MPI_WTIME()
+          call rlwm_actuate_device(this%n_nodes, tstep, this%start_rl_tstep, this%tsteps_rl, this%episode_length, &
+                this%action_d, this%tau_old_l%x_d, this%tau_new_l%x_d, this%utau_l%x_d, &
+                this%tau_x%x_d, this%tau_y%x_d, this%tau_z%x_d, this%tau_true, &
+                this%ui_l%x_d, this%vi_l%x_d, this%wi_l%x_d, this%magu_l%x_d, &
+                this%error_new%x_d, this%error_old%x_d, this%rel_error%x_d, &
+                this%reward%x_d, this%total_reward%x_d, this%base_reward%x_d, this%bonus_reward%x_d, &
+                this%msk_d, this%reward_field%x_d)
+          ! end_time = MPI_WTIME()
+          ! if (pe_rank == 0) write(*, *) 'Time: Actuation (Sim. CUDA Kernel) = ', (end_time - start_time) * 1000.0_rp, ' ms'
 
-        call this%get_global_reward()
-        call this%get_global_terminal()
-        if (mod(tstep - this%start_rl_tstep, this%tsteps_rl) .eq. 0) call this%update_buffer()
-        ! call this%update_buffer()
+          call this%get_global_reward()
+          call this%get_global_terminal()
+          if (mod(tstep - this%start_rl_tstep, this%tsteps_rl) .eq. 0) call this%update_buffer()
+          ! call this%update_buffer()
 
-        ! ::::::> Train after the buffer is full at the end of the episode ::::::
-        train_starter = mod((real(tstep) - real(this%start_rl_tstep)) / real(this%tsteps_rl), real(this%episode_length))
-        if (train_starter .eq. 0.0_rp) then
-          call this%train_and_save()
-          ! res = torchfort_rl_off_policy_evaluate(this%tf_key, this%state_older, this%action_older, reward_out)
+          ! ::::::> Train after the buffer is full at the end of the episode ::::::
+          train_starter = mod((real(tstep) - real(this%start_rl_tstep)) / real(this%tsteps_rl), real(this%episode_length))
+          if ((train_starter .eq. 0.0_rp)) then
+            call this%train_and_save()
+            ! res = torchfort_rl_off_policy_evaluate(this%tf_key, this%state_older, this%action_older, reward_out)
+          end if
+
+        else
+          call rlwm_inference_device(this%n_nodes, tstep, this%start_rl_tstep, this%tsteps_rl, this%episode_length, &
+                this%action_d, this%tau_old_l%x_d, this%tau_new_l%x_d, this%utau_l%x_d, &
+                this%tau_x%x_d, this%tau_y%x_d, this%tau_z%x_d, this%tau_true, &
+                this%ui_l%x_d, this%vi_l%x_d, this%wi_l%x_d, this%magu_l%x_d, &
+                this%error_new%x_d, this%error_old%x_d, this%rel_error%x_d, &
+                this%reward%x_d, this%total_reward%x_d, this%base_reward%x_d, this%bonus_reward%x_d, &
+                this%msk_d, this%reward_field%x_d)          
+
         end if
 
       end if
 
     else
-      call rlwm_compute_cpu(u%x, v%x, w%x, &
-            this%ind_r, this%ind_s, this%ind_t, this%ind_e, &
-            this%n_x%x, this%n_y%x, this%n_z%x, &
-            this%nu%x, this%h%x, &
-            this%tau_x%x, this%tau_y%x, this%tau_z%x, &
-            this%n_nodes, u%Xh%lx, u%msh%nelv, &
-            this%kappa, this%B, tstep, & 
-            this%tf_key, this%yaml_path, this%log_dir, this%policy_method, this%phase, &
-            this%model_device, this%rb_device, this%start_rl_tstep, this%tsteps_rl, this%n_epochs, this%tau_true, &
-            this%ui_l%x, this%vi_l%x, this%wi_l%x, this%normu_l%x, this%magu_l%x, this%vg_l%x, this%utau_l%x, &
-            this%tau_old_l%x, this%tau_new_l%x, &
-            this%l_star%x, this%u_plus%x, this%g_plus%x, this%h_plus%x, this%slope%x, this%intercept%x, this%dudy, &
-            this%error_new%x, this%error_old%x, this%rel_error%x, &
-            this%reward%x, this%total_reward%x, this%reward_out%x, this%base_reward%x, this%bonus_reward%x, &
-            this%terminal%x, &
-            this%recvcounts, this%displs, this%total_agents, this%state, this%action, this%global_state, this%global_action, &
-            this%episode, this%global_state_older, this%global_action_older, this%global_reward, this%global_terminal, &
-            this%p_loss_val, this%q_loss_val, &
-            this%msk, this%reward_field, this%slope_field, this%intercept_field)
+      ! call rlwm_compute_cpu(u%x, v%x, w%x, &
+      !       this%ind_r, this%ind_s, this%ind_t, this%ind_e, &
+      !       this%n_x%x, this%n_y%x, this%n_z%x, &
+      !       this%nu%x, this%h%x, &
+      !       this%tau_x%x, this%tau_y%x, this%tau_z%x, &
+      !       this%n_nodes, u%Xh%lx, u%msh%nelv, &
+      !       this%kappa, this%B, tstep, & 
+      !       this%tf_key, this%yaml_path, this%log_dir, this%policy_method, this%phase, &
+      !       this%model_device, this%rb_device, this%start_rl_tstep, this%tsteps_rl, this%n_epochs, this%tau_true, &
+      !       this%ui_l%x, this%vi_l%x, this%wi_l%x, this%normu_l%x, this%magu_l%x, this%vg_l%x, this%utau_l%x, &
+      !       this%tau_old_l%x, this%tau_new_l%x, &
+      !       this%l_star%x, this%u_plus%x, this%g_plus%x, this%h_plus%x, this%slope%x, this%intercept%x, this%dudy, &
+      !       this%error_new%x, this%error_old%x, this%rel_error%x, &
+      !       this%reward%x, this%total_reward%x, this%reward_out%x, this%base_reward%x, this%bonus_reward%x, &
+      !       this%terminal%x, &
+      !       this%recvcounts, this%displs, this%total_agents, this%state, this%action, this%global_state, this%global_action, &
+      !       this%episode, this%global_state_older, this%global_action_older, this%global_reward, this%global_terminal, &
+      !       this%p_loss_val, this%q_loss_val, &
+      !       this%msk, this%reward_field, this%slope_field, this%intercept_field)
     end if
 
   end subroutine rlwm_compute
@@ -685,13 +726,32 @@ contains
       ! start_time = MPI_WTIME()
       select case (trim(this%policy_method))
       case ("on-policy")
-        ! res = torchfort_rl_on_policy_predict(this%tf_key, this%global_state, this%global_action)
-        res = torchfort_rl_on_policy_predict_explore(this%tf_key, this%global_state, this%global_action)
-        if (res /= TORCHFORT_RESULT_SUCCESS) stop
+        if (this%phase .eq. 'training') then
+          res = torchfort_rl_on_policy_predict_explore(this%tf_key, this%global_state, this%global_action)
+          if (res /= TORCHFORT_RESULT_SUCCESS) stop
+          ! res = torchfort_rl_on_policy_predict(this%tf_key, this%global_state, this%global_action)
+          ! if (res /= TORCHFORT_RESULT_SUCCESS) stop
+        else if (this%phase .eq. 'testing') then
+          res = torchfort_inference(this%model_name, this%global_state, this%global_action)
+          if (res /= TORCHFORT_RESULT_SUCCESS) stop
+        end if
       case ("off-policy")
-        ! res = torchfort_rl_off_policy_predict(this%tf_key, this%global_state, this%global_action)
-        res = torchfort_rl_off_policy_predict_explore(this%tf_key, this%global_state, this%global_action)
-        if (res /= TORCHFORT_RESULT_SUCCESS) stop
+        if (this%phase .eq. 'training') then
+          res = torchfort_rl_off_policy_predict_explore(this%tf_key, this%global_state, this%global_action)
+          if (res /= TORCHFORT_RESULT_SUCCESS) stop
+          ! res = torchfort_rl_off_policy_predict(this%tf_key, this%global_state, this%global_action)
+          ! if (res /= TORCHFORT_RESULT_SUCCESS) stop
+        else if (this%phase .eq. 'testing') then
+          ! call this%print_buffer()
+          res = torchfort_rl_off_policy_predict(this%tf_key, this%global_state, this%global_action)
+          if (res /= TORCHFORT_RESULT_SUCCESS) stop
+          ! res = torchfort_inference(this%model_name, this%global_state, this%global_action)
+          ! print *, "Result of inference : ", res
+          ! print *, "Model Name         : ", this%model_name
+          ! print *, "Global State Size  : ", size(this%global_state)
+          ! print *, "Global Action Size : ", size(this%global_action)
+          ! if (res /= TORCHFORT_RESULT_SUCCESS) stop
+        end if
       end select
       ! end_time = MPI_WTIME()
       ! if (pe_rank == 0) write(*, *) 'Time: Predict Explore = ', (end_time - start_time) * 1000.0_rp, ' ms'
@@ -761,12 +821,14 @@ contains
       ! start_time = MPI_WTIME()
       select case (trim(this%policy_method))
       case ("on-policy")
+        call this%print_buffer()
         res = torchfort_rl_on_policy_update_rollout_buffer(this%tf_key, & 
-        this%global_state_older, this%global_action_older, this%global_reward, this%global_terminal)
+        this%global_state_old, this%global_action_old, this%global_reward, this%global_terminal)
         if (res /= TORCHFORT_RESULT_SUCCESS) stop
       case ("off-policy")
+        call this%print_buffer()
         res = torchfort_rl_off_policy_update_replay_buffer(this%tf_key, & 
-        this%global_state_older, this%global_action_older, this%global_state, this%global_reward, this%global_terminal)
+        this%global_state_old, this%global_action_old, this%global_state, this%global_reward, this%global_terminal)
         if (res /= TORCHFORT_RESULT_SUCCESS) stop
       end select
       ! end_time = MPI_WTIME()
@@ -774,6 +836,45 @@ contains
     end if
 
   end subroutine rlwm_update_buffer
+
+  !============================
+  ! Print Data going to Buffer
+  !============================
+  subroutine rlwm_print_buffer(this)
+
+    class(rlwm_t), intent(inout) :: this
+    integer :: shp(2)
+
+    write(*, *) '======================================================================================================'
+    write(*, '(A25, A15, A15, A15)') 'Array Name', 'Shape', 'Size', 'Sum'
+    write(*, *) '------------------------------------------------------------------------------------------------------'
+    
+    shp = shape(this%global_state_old)
+    write(*, '(A25, A1, I6, A1, I6, A1, I15, F20.5)') &
+        'global_state_old', '(', shp(1), ',', shp(2), ')', &
+        size(this%global_state_old), sum(this%global_state_old)
+
+    shp = shape(this%global_action_old)
+    write(*, '(A25, A1, I6, A1, I6, A1, I15, F20.5)') &
+        'global_action_old', '(', shp(1), ',', shp(2), ')', &
+        size(this%global_action_old), sum(this%global_action_old)
+    
+    shp = shape(this%global_state)
+    write(*, '(A25, A1, I6, A1, I6, A1, I15, F20.5)') &
+        'global_state', '(', shp(1), ',', shp(2), ')', &
+        size(this%global_state), sum(this%global_state)
+    
+    write(*, '(A25, A1, I6, A1, A6, I15, F20.5)') &
+        'global_reward', '(', shape(this%global_reward), ')', '      ', &
+        size(this%global_reward), sum(this%global_reward)
+    
+    write(*, '(A25, A1, I6, A1, A6, I15, F20.5)') &
+        'global_terminal', '(', shape(this%global_terminal), ')', '      ', &
+        size(this%global_terminal), sum(this%global_terminal)
+    
+    write(*,*)
+
+  end subroutine rlwm_print_buffer
 
   !===================
   ! Training & Saving 
@@ -794,15 +895,11 @@ contains
           print *, "Epoch = ", epoch, " , p_loss = ", this%p_loss_val, " , q_loss = ", this%q_loss_val
         end if
       end do
-      res = torchfort_rl_on_policy_save_checkpoint(this%tf_key, this%log_dir)
-      if (res /= TORCHFORT_RESULT_SUCCESS) stop
+      if (is_ready) then
+        res = torchfort_rl_on_policy_save_checkpoint(this%tf_key, this%log_dir)
+        if (res /= TORCHFORT_RESULT_SUCCESS) stop
+      end if
     case ("off-policy")
-      ! start_time = MPI_WTIME()
-      res = torchfort_rl_off_policy_save_checkpoint(this%tf_key, this%log_dir)
-      if (res /= TORCHFORT_RESULT_SUCCESS) stop
-      ! end_time = MPI_WTIME()
-      ! if (pe_rank == 0) write(*, *) 'Time: Saving Checkpoint = ', (end_time - start_time) * 1000.0_rp, ' ms'
-      ! start_time = MPI_WTIME()
       res = torchfort_rl_off_policy_is_ready(this%tf_key, is_ready)
       ! end_time = MPI_WTIME()
       ! if (pe_rank == 0) write(*, *) 'Time: Check if ready for training = ', (end_time - start_time) * 1000.0_rp, ' ms'
@@ -816,6 +913,12 @@ contains
       end do
       ! end_time = MPI_WTIME()
       ! if (pe_rank == 0) write(*, *) 'Time: Train Step Loop (all epochs) = ', (end_time - start_time) * 1000.0_rp, ' ms'
+      ! start_time = MPI_WTIME()
+      res = torchfort_rl_off_policy_save_checkpoint(this%tf_key, this%log_dir)
+      if (res /= TORCHFORT_RESULT_SUCCESS) stop
+      ! end_time = MPI_WTIME()
+      ! if (pe_rank == 0) write(*, *) 'Time: Saving Checkpoint = ', (end_time - start_time) * 1000.0_rp, ' ms'
+      ! start_time = MPI_WTIME()
     end select
 
   end subroutine rlwm_train_and_save
