@@ -67,7 +67,7 @@ contains
         
           type is (rlwm_t)
               
-          if (allocated(this%state) .and. allocated(this%action)) then
+          if (allocated(this%state) .and. allocated(this%action) .and. (this%phase .eq. 'training')) then
             
             ! D2H copy of total_reward
             call device_memcpy(this%total_reward%x, this%total_reward%x_d, size(this%total_reward%x), &
@@ -166,13 +166,13 @@ contains
     real(kind=rp) :: llx, llz
 
     ! target mesh size
-    llx = 4.*pi
-    llz = 4./3.*pi
+    llx = 2.*pi ! 4.*pi
+    llz = 1.*pi ! 4./3.*pi
 
     ! rescale mesh
-    el_in_y = 10 ! 18
-    el_in_visc_lay = 2
-    viscous_layer = 0.0888889
+    el_in_y = 12 ! 10, 18
+    el_in_visc_lay = 1 ! 2
+    viscous_layer = 0.0888889 ! = 1/11.25
     el_h = 2.0_rp/el_in_y
     visc_el_h = viscous_layer/el_in_visc_lay
     center_el_h = (1.0_rp-viscous_layer)/(el_in_y/2-el_in_visc_lay)

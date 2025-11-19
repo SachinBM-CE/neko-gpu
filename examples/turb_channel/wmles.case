@@ -8,10 +8,10 @@
     "output_checkpoints": true,
     "checkpoint_control": "simulationtime",
     "checkpoint_value": 50,
-    "restart_file": "fluid00002.chkp",
+    "restart_file": "fluid00004.chkp",
     "time": 
     {
-      "end_time": 200.0,
+      "end_time": 300.0,
       "variable_timestep": true,
       "target_cfl": 0.5,
       "max_timestep": 1e-1
@@ -25,7 +25,7 @@
     "fluid": 
     {
       "scheme": "pnpn",
-      "Re": 20000,
+      "Re": 125000,
       "nut_field": "nut",
       "full_stress_formulation": true,
       "initial_condition": 
@@ -61,20 +61,23 @@
           "model": "rlwm",
           "kappa": 0.41,
           "B": 5.2,
-          "h_index": 7,
+          "h_index": 5,
           "zone_indices": [3,4],
           "tf_key": "rlwm",
           "yaml_path": "/home/sachinbm/cpu-neko-tf/neko-gpu/examples/turb_channel/config_les.yaml",
           "log_dir": "/home/sachinbm/cpu-neko-tf/neko-gpu/examples/turb_channel/logdir",
           "policy_method": "off-policy",
-          "phase": "training",
+          "phase": "testing",
           "model_device": 0,
           "rb_device": 0,
           "tau_true": 0.0025,
           "start_rl_tstep": 10,
-          "tsteps_rl": 100,
+          "tsteps_rl": 500,
           "episode_length": 5,
-          "n_epochs": 100
+          "n_epochs": 5,
+          "model_name": "inference",
+          "model_config_file": "/home/sachinbm/cpu-neko-tf/neko-gpu/examples/turb_channel/config_model.yaml",
+          "policy_model_file": "/home/sachinbm/cpu-neko-tf/neko-gpu/examples/turb_channel/model.pt"
         }
       ],
       "flow_rate_force": 
@@ -124,7 +127,7 @@
       },
       {
         "type": "les_model",
-        "model": "sigma",
+        "model": "vreman",
         "delta_type": "pointwise",
         "nut_field": "nut",
         "output_control": "global",

@@ -20,8 +20,8 @@ algorithm:
 actor:
   type: gaussian_ac
   parameters:
-    a_low: 0.95
-    a_high: 1.05
+    a_low: 0.9
+    a_high: 1.1
     
 rollout_buffer:
   type: gae_lambda

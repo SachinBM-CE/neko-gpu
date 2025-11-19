@@ -1,0 +1,159 @@
+{
+  "version": 1.0,
+  "case": 
+  {
+    "mesh_file": "box.nmsh", 
+    "output_at_end": true,
+    "output_boundary": true,
+    "output_checkpoints": true,
+    "checkpoint_control": "simulationtime",
+    "checkpoint_value": 50,
+    "restart_file": "fluid00002.chkp",
+    "time": 
+    {
+      "end_time": 300.0,
+      "variable_timestep": true,
+      "target_cfl": 0.5,
+      "max_timestep": 1e-1
+    },
+    "numerics": 
+    {
+      "time_order": 3,
+      "polynomial_order": 7,
+      "dealias": true
+    },
+    "fluid": 
+    {
+      "scheme": "pnpn",
+      "Re": 20000,
+      "nut_field": "nut",
+      "full_stress_formulation": true,
+      "source_terms":
+      [
+        {
+          "type": "constant",
+          "values": [0.0025, 0, 0]
+        }
+      ],
+      "initial_condition": 
+      {
+        "type": "user"
+      },
+      "velocity_solver": 
+      {
+        "type": "fused_coupled_cg",
+        "preconditioner": 
+        {
+          "type": "jacobi"
+        },
+        "projection_space_size": 0,
+        "absolute_tolerance": 1e-4,
+        "max_iterations": 800
+      },
+      "pressure_solver": 
+      {
+        "type": "gmres",
+        "preconditioner": 
+        {
+          "type": "hsmg"
+        },
+        "projection_space_size": 5,
+        "absolute_tolerance": 1e-3,
+        "max_iterations": 800
+      },
+      "boundary_conditions": 
+      [
+        {
+          "type": "wall_model",
+          "model": "rlwm",
+          "kappa": 0.41,
+          "B": 5.2,
+          "h_index": 5,
+          "zone_indices": [3,4],
+          "tf_key": "rlwm",
+          "yaml_path": "/home/sachinbm/cpu-neko-tf/neko-gpu/examples/turb_channel/config_les.yaml",
+          "log_dir": "/home/sachinbm/cpu-neko-tf/neko-gpu/examples/turb_channel/logdir",
+          "policy_method": "off-policy",
+          "phase": "training",
+          "model_device": 0,
+          "rb_device": 0,
+          "tau_true": 0.0025,
+          "start_rl_tstep": 10,
+          "tsteps_rl": 100,
+          "episode_length": 5,
+          "n_epochs": 100,
+          "model_name": "inference",
+          "model_config_file": "/home/sachinbm/cpu-neko-tf/neko-gpu/examples/turb_channel/config_model.yaml",
+          "policy_model_file": "/home/sachinbm/cpu-neko-tf/neko-gpu/examples/turb_channel/model.pt"
+        }
+      ],
+      "output_control": "simulationtime",
+      "output_value": 5.0
+    },
+    "simulation_components": 
+    [
+      {
+        "type": "field_writer",
+        "fields": ["tau"],
+        "output_control" : "global",
+        "output_filename": "tau"
+      },
+      {
+        "type": "field_writer",
+        "fields": ["reward"],
+        "output_control" : "global",
+        "output_filename": "reward"
+      },
+      {
+        "type": "field_writer",
+        "fields": ["slope"],
+        "output_control" : "global",
+        "output_filename": "slope"
+      },
+      {
+        "type": "field_writer",
+        "fields": ["intercept"],
+        "output_control" : "global",
+        "output_filename": "intercept"
+      },
+      {
+        "type": "fluid_stats",
+        "start_time": 60,
+        "output_control": "simulationtime",
+        "output_value": 5.0,
+        "compute_control": "tsteps",
+        "compute_value": 50,
+        "avg_direction": "xz",
+        "set_of_stats": "basic"
+      },
+      {
+        "type": "les_model",
+        "model": "vreman",
+        "delta_type": "pointwise",
+        "nut_field": "nut",
+        "output_control": "global",
+        "output_filename": "les"
+      },
+      {
+        "type": "force_torque",
+        "output_control": "global",
+        "compute_control": "tsteps",
+        "compute_value": 50,
+        "zone_id": 3,
+        "zone_name": "Bottom wall",
+        "center": [0, 0, 0],
+        "scale": 0.01899
+      },
+      {
+        "type": "force_torque",
+        "output_control": "global",
+        "compute_control": "tsteps",
+        "compute_value": 50,
+        "zone_id": 4,
+        "zone_name": "Top wall",
+        "center": [0, 0, 0],
+        "scale": 0.01899
+      }
+    ]
+  }
+}
