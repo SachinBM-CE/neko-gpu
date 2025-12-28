@@ -74,7 +74,7 @@ contains
                                 DEVICE_TO_HOST, sync = .true.)
 
             ! Only rank 0 processes global arrays
-            if (pe_rank == 0) then            
+            if ((pe_rank == 0) .and. mod(tstep - this%start_rl_tstep, this%tsteps_rl) .eq. 0) then            
               ! Copy global arrays to their "old" and "older" versions
               if (allocated(this%global_state_older)) then
                 call copy(this%global_state_older, this%global_state_old, size(this%global_state_old))
@@ -87,8 +87,8 @@ contains
               end if            
               if (allocated(this%global_action_old)) then
                 call copy(this%global_action_old, this%global_action, size(this%global_action))
-              end if            
-              ! call print_global_debug_info(1, 5, this%total_agents, &
+              end if           
+              ! call print_global_debug_info(1, 5, tstep,this%total_agents, &
               !                              this%global_state, this%global_state_old, this%global_state_older, &
               !                              this%global_action, this%global_action_old, this%global_action_older)
             
@@ -166,11 +166,13 @@ contains
     real(kind=rp) :: llx, llz
 
     ! target mesh size
-    llx = 2.*pi ! 4.*pi
-    llz = 1.*pi ! 4./3.*pi
+    ! llx = 2.*pi 
+    ! llz = 1.*pi 
+    llx = 4.*pi
+    llz = 4./3.*pi
 
     ! rescale mesh
-    el_in_y = 12 ! 10, 18
+    el_in_y = 10 
     el_in_visc_lay = 1 ! 2
     viscous_layer = 0.0888889 ! = 1/11.25
     el_h = 2.0_rp/el_in_y
@@ -233,10 +235,10 @@ contains
     llx = 4.*pi
     llz = 4./3.*pi
 
-    Re_tau = 180
+    Re_tau = 1000
     C = 5.17
     k = 0.41
-    Re_b = 2800
+    Re_b = 20000
 
     yp = (1-y)*Re_tau
     if (y .lt. 0) yp = (1+y)*Re_tau
@@ -326,7 +328,7 @@ end module user
 !==================================================================================================================================
 !> Print global debug info
 !==================================================================================================================================
-subroutine print_global_debug_info(a, b, total_agents, &
+subroutine print_global_debug_info(a, b, tstep, total_agents, &
               g_state, g_state_old, g_state_older, &
               g_action, g_action_old, g_action_older)
     
@@ -334,7 +336,7 @@ subroutine print_global_debug_info(a, b, total_agents, &
     use num_types, only: rp
     implicit none
               
-  integer :: i, a, b, total_agents
+  integer :: i, a, b, tstep, total_agents
 	real(kind=rp), dimension(2, total_agents), intent(inout) :: g_state, g_state_old, g_state_older
 	real(kind=rp), dimension(1, total_agents), intent(inout) :: g_action, g_action_old, g_action_older
 
@@ -344,13 +346,13 @@ subroutine print_global_debug_info(a, b, total_agents, &
         if (i == a) then
           write(*, *) '======================================================================================================& 
                        ============================'
-          write(*, '(A6, A20, A20, A20, A20, A20, A20)') &
-                'i', 'g_state', 'g_state_old', 'g_state_older', 'g_action', 'g_action_old', 'g_action_older'
+          write(*, '(A6, A6, A20, A20, A20, A20, A20, A20)') &
+                'tstep', 'i', 'g_state', 'g_state_old', 'g_state_older', 'g_action', 'g_action_old', 'g_action_older'
           write(*, *) '------------------------------------------------------------------------------------------------------&
 				               ----------------------------'
         end if
-        write(*, '(I6, ES20.5, ES20.5, ES20.5, ES20.5, ES20.5, ES20.5)') &
-              i, g_state(1,i), g_state_old(2,i), g_state_older(1,i), g_action(1,i), g_action_old(1,i), g_action_older(1,i)
+        write(*, '(I6, I6, ES20.5, ES20.5, ES20.5, ES20.5, ES20.5, ES20.5)') &
+              tstep, i, g_state(1,i), g_state_old(2,i), g_state_older(1,i), g_action(1,i), g_action_old(1,i), g_action_older(1,i)
       end if
     end if
   end do
